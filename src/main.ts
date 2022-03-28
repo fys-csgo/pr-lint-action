@@ -19,6 +19,12 @@ const onFailedRegexRequestChanges: boolean =
 const onSucceededRegexDismissReviewComment: string = core.getInput(
   "on-succeeded-regex-dismiss-review-comment"
 );
+const verfiyHeadCommitMessage: boolean = 
+  core.getInput("verify-head-commit-message-as-title") == "true";
+const onFailedVerfiyHeadCommitMessageClosePullRequest: boolean = 
+  core.getInput("on-failed-verify-head-commit-message-close") === "true";
+const onFailedVerfiyHeadCommitMessageClosePullRequestComment: string = 
+  core.getInput("on-failed-verify-head-commit-message-comment");
 
 async function run(): Promise<void> {
   const githubContext = github.context;
@@ -44,13 +50,85 @@ async function run(): Promise<void> {
       core.setFailed(comment);
     }
   } else {
-    core.debug(`Regex pass`);
-    if (onFailedRegexCreateReviewInput) {
-      core.debug(`Dismissing review`);
-      await dismissReview(pullRequest);
-      core.debug(`Review dimissed`);
+    if (verfiyHeadCommitMessage) {
+      const headSha = await getPullRequestHeadSha({
+        owner: pullRequest.owner,
+        repo: pullRequest.repo,
+        number: pullRequest.number
+      });
+      core.debug(`head sha ${headSha}`);
+    
+      const commit = await getCommitBySha({
+        owner: pullRequest.owner,
+        repo: pullRequest.repo,
+        sha: headSha,
+      });
+      core.debug(`commit-message ${commit.message}`);
+  
+      const messageMatchesRegex: boolean = titleRegex.test(commit.message);
+      if (!messageMatchesRegex) {
+        core.debug(`match fail`);
+        if (onFailedVerfiyHeadCommitMessageClosePullRequest) {
+          closePullRequest(onFailedVerfiyHeadCommitMessageClosePullRequestComment, pullRequest);
+        }
+        core.setFailed(onFailedVerfiyHeadCommitMessageClosePullRequestComment);
+      } else {
+        core.debug(`Regex pass`);
+        if (onFailedRegexCreateReviewInput) {
+          core.debug(`Dismissing review`);
+          await dismissReview(pullRequest);
+          core.debug(`Review dimissed`);
+        }
+      }
+    } else {
+      core.debug(`Regex pass`);
+      if (onFailedRegexCreateReviewInput) {
+        core.debug(`Dismissing review`);
+        await dismissReview(pullRequest);
+        core.debug(`Review dimissed`);
+      }
     }
   }
+}
+
+async function getPullRequestHeadSha(pullRequest: {
+  owner: string;
+  repo: string;
+  number: number;
+}) {
+  const pr = await octokit.rest.pulls.get({
+    owner: pullRequest.owner,
+    repo: pullRequest.repo,
+    pull_number: pullRequest.number,
+  });
+  
+  return pr.data.head.sha;
+}
+
+async function getCommitBySha(commit: {
+  owner: string;
+  repo: string;
+  sha: string;
+}) {
+  const response = await octokit.rest.git.getCommit({
+    owner: commit.owner,
+    repo: commit.repo,
+    commit_sha: commit.sha
+  });
+  return response.data;
+}
+
+function closePullRequest(
+  comment: string,
+  pullRequest: { owner: string; repo: string; number: number }
+) {
+  void octokit.rest.pulls.update({
+    owner: pullRequest.owner,
+    repo: pullRequest.repo,
+    pull_number: pullRequest.number,
+    state: "closed",
+    body: comment
+  })
 }
 
 function createReview(
