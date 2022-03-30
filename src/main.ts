@@ -51,21 +51,14 @@ async function run(): Promise<void> {
     }
   } else {
     if (verfiyHeadCommitMessage) {
-      const headSha = await getPullRequestHeadSha({
+      const commitMessage = await getPullRequestHeadCommitMessage({
         owner: pullRequest.owner,
         repo: pullRequest.repo,
         number: pullRequest.number
       });
-      core.debug(`head sha ${headSha}`);
-    
-      const commit = await getCommitBySha({
-        owner: pullRequest.owner,
-        repo: pullRequest.repo,
-        sha: headSha,
-      });
-      core.debug(`commit-message ${commit.message}`);
-  
-      const messageMatchesRegex: boolean = titleRegex.test(commit.message);
+      core.debug(`head commit message ${commitMessage}`);
+
+      const messageMatchesRegex: boolean = titleRegex.test(commitMessage);
       if (!messageMatchesRegex) {
         core.debug(`match fail`);
         if (onFailedVerfiyHeadCommitMessageClosePullRequest) {
@@ -91,31 +84,18 @@ async function run(): Promise<void> {
   }
 }
 
-async function getPullRequestHeadSha(pullRequest: {
+async function getPullRequestHeadCommitMessage(pullRequest: {
   owner: string;
   repo: string;
   number: number;
 }) {
-  const pr = await octokit.rest.pulls.get({
+  const pr = await octokit.rest.pulls.listCommits({
     owner: pullRequest.owner,
     repo: pullRequest.repo,
     pull_number: pullRequest.number,
   });
-  
-  return pr.data.head.sha;
-}
 
-async function getCommitBySha(commit: {
-  owner: string;
-  repo: string;
-  sha: string;
-}) {
-  const response = await octokit.rest.git.getCommit({
-    owner: commit.owner,
-    repo: commit.repo,
-    commit_sha: commit.sha
-  });
-  return response.data;
+  return pr.data[0].commit.message;
 }
 
 function closePullRequest(
