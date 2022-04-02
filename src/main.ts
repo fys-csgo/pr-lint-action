@@ -44,7 +44,7 @@ async function run(): Promise<void> {
   const titleMatchesRegex: boolean = titleRegex.test(title);
   if (!titleMatchesRegex) {
     if (onFailedRegexCreateReviewInput) {
-      createReview(comment, pullRequest);
+      await createReview(comment, pullRequest);
     }
     if (onFailedRegexFailActionInput) {
       core.setFailed(comment);
@@ -62,7 +62,7 @@ async function run(): Promise<void> {
       if (!messageMatchesRegex) {
         core.debug(`match fail`);
         if (onFailedVerfiyHeadCommitMessageClosePullRequest) {
-          closePullRequest(onFailedVerfiyHeadCommitMessageClosePullRequestComment, pullRequest);
+          await closePullRequest(onFailedVerfiyHeadCommitMessageClosePullRequestComment, pullRequest);
         }
         core.setFailed(onFailedVerfiyHeadCommitMessageClosePullRequestComment);
       } else {
@@ -98,20 +98,25 @@ async function getPullRequestHeadCommitMessage(pullRequest: {
   return pr.data[0].commit.message;
 }
 
-function closePullRequest(
+async function closePullRequest(
   comment: string,
   pullRequest: { owner: string; repo: string; number: number }
 ) {
-  void octokit.rest.pulls.update({
+  await octokit.rest.issues.createComment({
+    owner: pullRequest.owner,
+    repo: pullRequest.repo,
+    issue_number: pullRequest.number,
+    body: comment
+  });
+  await octokit.rest.pulls.update({
     owner: pullRequest.owner,
     repo: pullRequest.repo,
     pull_number: pullRequest.number,
     state: "closed",
-    body: comment
   })
 }
 
-function createReview(
+async function createReview(
   comment: string,
   pullRequest: { owner: string; repo: string; number: number }
 ) {
