@@ -4,7 +4,7 @@ import * as github from "@actions/github";
 const repoTokenInput = core.getInput("repo-token", { required: true });
 const octokit = github.getOctokit(repoTokenInput);
 
-const titleRegexInput: string = core.getInput("title-regex", {
+const titleRegexInputArray: string = core.getInput("title-regex", {
   required: true,
 });
 const onFailedRegexCreateReviewInput: boolean =
@@ -19,101 +19,43 @@ const onFailedRegexRequestChanges: boolean =
 const onSucceededRegexDismissReviewComment: string = core.getInput(
   "on-succeeded-regex-dismiss-review-comment"
 );
-const verfiyHeadCommitMessage: boolean = 
-  core.getInput("verify-head-commit-message-as-title") == "true";
-const onFailedVerfiyHeadCommitMessageClosePullRequest: boolean = 
-  core.getInput("on-failed-verify-head-commit-message-close") === "true";
-const onFailedVerfiyHeadCommitMessageClosePullRequestComment: string = 
-  core.getInput("on-failed-verify-head-commit-message-comment");
 
 async function run(): Promise<void> {
   const githubContext = github.context;
   const pullRequest = githubContext.issue;
 
-  const titleRegex = new RegExp(titleRegexInput);
-  const title: string =
-    (githubContext.payload.pull_request?.title as string) ?? "";
-  const comment = onFailedRegexCommentInput.replace(
-    "%regex%",
-    titleRegex.source
-  );
+  const title: string = (githubContext.payload.pull_request?.title as string) ?? "";
 
-  core.debug(`Title Regex: ${titleRegex.source}`);
-  core.debug(`Title: ${title}`);
+  console.log(`Title: ${title}`);
 
-  const titleMatchesRegex: boolean = titleRegex.test(title);
+  const regexs: string[] = JSON.parse(titleRegexInputArray);
+  let titleMatchesRegex: boolean = false;
+  regexs.some((regexPattern: string) => {
+    let titleRegex = new RegExp(regexPattern);
+    console.log(`Title Regex: ${titleRegex.source}`);
+    if (titleRegex.test(title)) {
+      titleMatchesRegex = true;
+      console.log(`"${title} is passing"`);
+      return true;
+    }
+    return false;
+  });
+
   if (!titleMatchesRegex) {
     if (onFailedRegexCreateReviewInput) {
-      await createReview(comment, pullRequest);
+      await createReview(onFailedRegexCommentInput, pullRequest);
     }
     if (onFailedRegexFailActionInput) {
-      core.setFailed(comment);
+      core.setFailed(onFailedRegexCommentInput);
     }
   } else {
-    if (verfiyHeadCommitMessage) {
-      const commitMessage = await getPullRequestHeadCommitMessage({
-        owner: pullRequest.owner,
-        repo: pullRequest.repo,
-        number: pullRequest.number
-      });
-      core.debug(`head commit message ${commitMessage}`);
-
-      const messageMatchesRegex: boolean = titleRegex.test(commitMessage);
-      if (!messageMatchesRegex) {
-        core.debug(`match fail`);
-        if (onFailedVerfiyHeadCommitMessageClosePullRequest) {
-          await closePullRequest(onFailedVerfiyHeadCommitMessageClosePullRequestComment, pullRequest);
-        }
-        core.setFailed(onFailedVerfiyHeadCommitMessageClosePullRequestComment);
-      } else {
-        core.debug(`Regex pass`);
-        if (onFailedRegexCreateReviewInput) {
-          core.debug(`Dismissing review`);
-          await dismissReview(pullRequest);
-          core.debug(`Review dimissed`);
-        }
-      }
-    } else {
-      core.debug(`Regex pass`);
-      if (onFailedRegexCreateReviewInput) {
-        core.debug(`Dismissing review`);
-        await dismissReview(pullRequest);
-        core.debug(`Review dimissed`);
-      }
+    console.log(`Regex pass`);
+    if (onFailedRegexCreateReviewInput) {
+      console.log(`Dismissing review`);
+      await dismissReview(pullRequest);
+      console.log(`Review dimissed`);
     }
   }
-}
-
-async function getPullRequestHeadCommitMessage(pullRequest: {
-  owner: string;
-  repo: string;
-  number: number;
-}) {
-  const pr = await octokit.rest.pulls.listCommits({
-    owner: pullRequest.owner,
-    repo: pullRequest.repo,
-    pull_number: pullRequest.number,
-  });
-
-  return pr.data[0].commit.message;
-}
-
-async function closePullRequest(
-  comment: string,
-  pullRequest: { owner: string; repo: string; number: number }
-) {
-  await octokit.rest.issues.createComment({
-    owner: pullRequest.owner,
-    repo: pullRequest.repo,
-    issue_number: pullRequest.number,
-    body: comment
-  });
-  await octokit.rest.pulls.update({
-    owner: pullRequest.owner,
-    repo: pullRequest.repo,
-    pull_number: pullRequest.number,
-    state: "closed",
-  })
 }
 
 async function createReview(

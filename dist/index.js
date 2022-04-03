@@ -43,7 +43,7 @@ const core = __importStar(__nccwpck_require__(2186));
 const github = __importStar(__nccwpck_require__(5438));
 const repoTokenInput = core.getInput("repo-token", { required: true });
 const octokit = github.getOctokit(repoTokenInput);
-const titleRegexInput = core.getInput("title-regex", {
+const titleRegexInputArray = core.getInput("title-regex", {
     required: true,
 });
 const onFailedRegexCreateReviewInput = core.getInput("on-failed-regex-create-review") === "true";
@@ -51,88 +51,41 @@ const onFailedRegexCommentInput = core.getInput("on-failed-regex-comment");
 const onFailedRegexFailActionInput = core.getInput("on-failed-regex-fail-action") === "true";
 const onFailedRegexRequestChanges = core.getInput("on-failed-regex-request-changes") === "true";
 const onSucceededRegexDismissReviewComment = core.getInput("on-succeeded-regex-dismiss-review-comment");
-const verfiyHeadCommitMessage = core.getInput("verify-head-commit-message-as-title") == "true";
-const onFailedVerfiyHeadCommitMessageClosePullRequest = core.getInput("on-failed-verify-head-commit-message-close") === "true";
-const onFailedVerfiyHeadCommitMessageClosePullRequestComment = core.getInput("on-failed-verify-head-commit-message-comment");
 function run() {
     var _a, _b;
     return __awaiter(this, void 0, void 0, function* () {
         const githubContext = github.context;
         const pullRequest = githubContext.issue;
-        const titleRegex = new RegExp(titleRegexInput);
         const title = (_b = (_a = githubContext.payload.pull_request) === null || _a === void 0 ? void 0 : _a.title) !== null && _b !== void 0 ? _b : "";
-        const comment = onFailedRegexCommentInput.replace("%regex%", titleRegex.source);
-        core.debug(`Title Regex: ${titleRegex.source}`);
-        core.debug(`Title: ${title}`);
-        const titleMatchesRegex = titleRegex.test(title);
+        console.log(`Title: ${title}`);
+        const regexs = JSON.parse(titleRegexInputArray);
+        let titleMatchesRegex = false;
+        regexs.some((regexPattern) => {
+            let titleRegex = new RegExp(regexPattern);
+            console.log(`Title Regex: ${titleRegex.source}`);
+            if (titleRegex.test(title)) {
+                titleMatchesRegex = true;
+                console.log(`"${title} is passing"`);
+                return true;
+            }
+            return false;
+        });
         if (!titleMatchesRegex) {
             if (onFailedRegexCreateReviewInput) {
-                yield createReview(comment, pullRequest);
+                yield createReview(onFailedRegexCommentInput, pullRequest);
             }
             if (onFailedRegexFailActionInput) {
-                core.setFailed(comment);
+                core.setFailed(onFailedRegexCommentInput);
             }
         }
         else {
-            if (verfiyHeadCommitMessage) {
-                const commitMessage = yield getPullRequestHeadCommitMessage({
-                    owner: pullRequest.owner,
-                    repo: pullRequest.repo,
-                    number: pullRequest.number
-                });
-                core.debug(`head commit message ${commitMessage}`);
-                const messageMatchesRegex = titleRegex.test(commitMessage);
-                if (!messageMatchesRegex) {
-                    core.debug(`match fail`);
-                    if (onFailedVerfiyHeadCommitMessageClosePullRequest) {
-                        yield closePullRequest(onFailedVerfiyHeadCommitMessageClosePullRequestComment, pullRequest);
-                    }
-                    core.setFailed(onFailedVerfiyHeadCommitMessageClosePullRequestComment);
-                }
-                else {
-                    core.debug(`Regex pass`);
-                    if (onFailedRegexCreateReviewInput) {
-                        core.debug(`Dismissing review`);
-                        yield dismissReview(pullRequest);
-                        core.debug(`Review dimissed`);
-                    }
-                }
-            }
-            else {
-                core.debug(`Regex pass`);
-                if (onFailedRegexCreateReviewInput) {
-                    core.debug(`Dismissing review`);
-                    yield dismissReview(pullRequest);
-                    core.debug(`Review dimissed`);
-                }
+            console.log(`Regex pass`);
+            if (onFailedRegexCreateReviewInput) {
+                console.log(`Dismissing review`);
+                yield dismissReview(pullRequest);
+                console.log(`Review dimissed`);
             }
         }
-    });
-}
-function getPullRequestHeadCommitMessage(pullRequest) {
-    return __awaiter(this, void 0, void 0, function* () {
-        const pr = yield octokit.rest.pulls.listCommits({
-            owner: pullRequest.owner,
-            repo: pullRequest.repo,
-            pull_number: pullRequest.number,
-        });
-        return pr.data[0].commit.message;
-    });
-}
-function closePullRequest(comment, pullRequest) {
-    return __awaiter(this, void 0, void 0, function* () {
-        yield octokit.rest.issues.createComment({
-            owner: pullRequest.owner,
-            repo: pullRequest.repo,
-            issue_number: pullRequest.number,
-            body: comment
-        });
-        yield octokit.rest.pulls.update({
-            owner: pullRequest.owner,
-            repo: pullRequest.repo,
-            pull_number: pullRequest.number,
-            state: "closed",
-        });
     });
 }
 function createReview(comment, pullRequest) {
