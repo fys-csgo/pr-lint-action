@@ -129,5 +129,6 @@ function alreadyRequiredChanges(state: string) {
 }
 
 run().catch((error) => {
+  console.error(error);
   core.setFailed(error);
 });
